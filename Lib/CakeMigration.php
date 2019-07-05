@@ -253,6 +253,38 @@ class CakeMigration extends CakeObject {
 	}
 
 /**
+ * カラムのcharsetをdatabase.phpの文字コードに合わせて各マイグレーションのcharsetを変更する
+ *
+ * @param array $migration マイグレーション
+ * @return array charsetを変更した配列
+ */
+	private function __changeCharset($migration) {
+		$dbConfig = ConnectionManager::enumConnectionObjects();
+		if (isset($dbConfig[$this->connection]['encoding'])) {
+			$charset = $dbConfig[$this->connection]['encoding'];
+		} else {
+			$charset = 'utf8';
+		}
+		foreach ($migration as $type => $tables) {
+			if (! in_array($type, ['create_table', 'create_field', 'alter_field'], true)) {
+				continue;
+			}
+			foreach ($tables as $table => $fields) {
+				foreach ($fields as $field => $info) {
+					if (array_key_exists('charset', $info)) {
+						$info['charset'] = $charset;
+					}
+					if (array_key_exists('charset', $info)) {
+						$info['collate'] = $charset . '_general_ci';
+					}
+					$migration[$type][$table][$field] = $info;
+				}
+			}
+		}
+		return $migration;
+	}
+
+/**
  * Run migration commands
  *
  * @return void
@@ -260,6 +292,11 @@ class CakeMigration extends CakeObject {
  */
 	protected function _run() {
 		$result = true;
+
+		//文字コードをdatabase.phpを見て各テーブル・カラムのcharsetを変更する
+		$this->migration[$this->direction] =
+				$this->__changeCharset($this->migration[$this->direction]);
+
 		//force the order of migration types
 		uksort($this->migration[$this->direction], array($this, 'migration_order'));
 		foreach ($this->migration[$this->direction] as $type => $info) {
@@ -330,7 +367,6 @@ class CakeMigration extends CakeObject {
 				$this->_invokeCallbacks('beforeAction', 'create_table', array('table' => $table));
 				try {
 					$sql = $this->db->createSchema($this->Schema);
-
 					if ($this->dry) {
 						$this->logQuery($sql);
 						continue;
